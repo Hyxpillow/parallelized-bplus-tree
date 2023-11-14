@@ -354,16 +354,16 @@ int main() {
     
     t.display((Node*)(t.root), 0);
 
-    int op;
-    int key;
-    while(1) {
-        std::cin >> op >> key;
-        if (op == 0) {
-            t.insert(key, tmp);
-        } else if (op == 1) {
-            t.remove(key);
-        }
-        t.display((Node*)(t.root), 0);
-    }
+    // int op;
+    // int key;
+    // while(1) {
+    //     std::cin >> op >> key;
+    //     if (op == 0) {
+    //         t.insert(key, tmp);
+    //     } else if (op == 1) {
+    //         t.remove(key);
+    //     }
+    //     t.display((Node*)(t.root), 0);
+    // }
     return 0;
 }

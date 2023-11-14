@@ -7,9 +7,7 @@
 #define DATA_INDEX_MASK ((1 << DATA_INDEX_BITS) - 1)
 #define PAGE_SIZE 2048
 
-#define DATA_SIZE 32
 #define ROOT_ADDR 0
-#define ADDRESS_SIZE sizeof(v_addr)
 
 typedef unsigned int v_addr;
 typedef unsigned int _data;
@@ -58,7 +56,6 @@ typedef struct page_header {
     Node_Type type;
     unsigned int node_size;
     unsigned int count;
-    unsigned int data_size;
 } Page_Header;
 
 void init_page();

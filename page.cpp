@@ -29,10 +29,8 @@ int new_page(Node_Type node_type) { // return its addr
     header->type = node_type;
     if (node_type == LEAF) {
         header->node_size = sizeof(Leaf_Node);
-        header->data_size = DATA_SIZE;
     } else {
         header->node_size = sizeof(Internal_Node);
-        header->data_size = ADDRESS_SIZE;
     }
     page_list = (byte**)realloc(page_list, (page_count + 1) * sizeof(byte*));
     page_list[page_count] = page;
@@ -41,18 +39,18 @@ int new_page(Node_Type node_type) { // return its addr
 }
 
 
-Node* new_base(Node_Type Node_Type) {
+Node* new_base(Node_Type node_type) {
     int target_page = -1;
     Page_Header* header;
     for (int i = 0; i < page_count; i++) {
         header = (Page_Header*)page_list[i];
-        if (header->type == Node_Type && sizeof(Page_Header) + ((header->count + 1) * header->node_size) < PAGE_SIZE) {
+        if (header->type == node_type && sizeof(Page_Header) + ((header->count + 1) * header->node_size) < PAGE_SIZE) {
             target_page = i;
             break;
         }     
     }
     if (target_page == -1) {
-        target_page = new_page(Node_Type);
+        target_page = new_page(node_type);
         header = (Page_Header*)page_list[target_page];
     }
     int node_idx = 0;
@@ -66,7 +64,7 @@ Node* new_base(Node_Type Node_Type) {
     }
     memset(cursor, 0, header->node_size);
     cursor->valid = 1;
-    cursor->type = Node_Type;
+    cursor->type = node_type;
     cursor->addr = (target_page << DATA_INDEX_BITS) | node_idx;
     
     header->count++;
