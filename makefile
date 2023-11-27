@@ -1,5 +1,5 @@
 CC := g++
-CFLAGS := 
+CFLAGS := -std=c++17 -fopenmp -g
 OBJ := page.o bptree.o
 
 src_dir := .
@@ -8,7 +8,7 @@ include_dir := .
 tree: $(OBJ)
 	$(CC) $(CFLAGS) $^ -o $@
 
-%.o: $(src_dir)/%.c
+%.o: $(src_dir)/%.cpp
 	$(CC) -c $(CFLAGS) $^ -o $@ -I $(include_dir)
 
 clean: 

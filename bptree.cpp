@@ -61,24 +61,48 @@ public:
 
     _data search(int key) {
         int i;
+        transaction_t trans;
         Internal_Node* cursor = root;
         while (cursor->type != LEAF) {
             for (i = 0; i < cursor->size && cursor->key[i] < key; i++);
+            Internal_Node* prev = trans.get_previous_lock();
+            if (prev)
+            {
+                prev->latch.unlock_shared();
+            }
+            
+            cursor->latch.lock_shared();
+            trans.add_lock(cursor);
             cursor = (Internal_Node*)get_base(cursor->children[i]);
         }
         Leaf_Node* leaf = (Leaf_Node*)cursor;
         i = _search((Node*)leaf, key);
         if (i == leaf->size || leaf->key[i] != key)
+            trans.free_all_locks();
             return 0; // key not found
+        trans.free_all_locks();
         return leaf->data[i];
     }
     
     void insert(int key, _data data) {
         int i;
         Internal_Node* cursor = root;
+        transaction_t trans;
+        root->latch.lock();
+
+        // Search from root, to get the leaf node where we insert the data
         while (cursor->type != LEAF) {
             for (i = 0; i < cursor->size && cursor->key[i] < key; i++);
             cursor = (Internal_Node*)get_base(cursor->children[i]);
+            //Internal_Node* previous = trans.get_previous_lock();
+            // Safe and exist node, unlock
+            // if (previous && previous->size < K)
+            // {
+            //     previous->latch.unlock();
+            // }
+            // Add current  cursor into lock_list
+            trans.add_lock(cursor);
+            cursor->latch.lock();
         }
         Leaf_Node* leaf = (Leaf_Node*)cursor;
         i = _search((Node*)leaf, key);
@@ -154,41 +178,64 @@ public:
                 insert_child(parent, i, mid_key, cursor->addr);
                 cursor->size--;
             }
+            
         }
+        trans.free_all_locks();
+        root->latch.unlock();
+        std::cout << "Insert " << key << "successfully" << std::endl;
     }
 
     void remove(int key) {
         int i;
         Internal_Node* cursor = root;
+        transaction_t trans;
+        root->latch.lock();
         while (cursor->type != LEAF) {
             for (i = 0; i < cursor->size && cursor->key[i] < key; i++);
             cursor = (Internal_Node*)get_base(cursor->children[i]);
+            trans.add_lock(cursor);
+            cursor->latch.lock();
         }
+        // Get the leaf node
+        trans.free_last_lock();
         Leaf_Node* leaf = (Leaf_Node*)cursor;
+        leaf->latch.lock();
         i = _search((Node*)leaf, key);
         if (i == leaf->size || leaf->key[i] != key)
+        {
+            leaf->latch.unlock();
+            trans.free_all_locks();
             return; // key not found
-        remove_data(leaf, i);
+        }
+        remove_data(leaf, i); // leaf still exist, be careful for the lock
 
         if (leaf->size < (K + 1) / 2) { // leaf unbalanced
-            Internal_Node* parent = (Internal_Node*)get_base(leaf->parent);
+            Internal_Node* parent = (Internal_Node*)get_base(leaf->parent); // already locked
             Leaf_Node* next = (Leaf_Node*)get_base(leaf->next);
             Leaf_Node* prev = (Leaf_Node*)get_base(leaf->prev);
             if (leaf->next != ROOT_ADDR && next->parent == leaf->parent && next->size > (K + 1) / 2) { // borrow from next
                 int borrow_key = next->key[0]; // new_key for cursor
                 insert_data(leaf, leaf->size, borrow_key, next->data[0]);
+                next->latch.lock();
                 remove_data(next, 0);
                 int new_key_for_leaf = borrow_key;
                 i = _search((Node*)parent, key);
                 parent->key[i] = borrow_key;
+                next->latch.unlock();
+                leaf->latch.unlock();
+                trans.free_all_locks();
                 return;
             } else if (leaf->prev != ROOT_ADDR && prev->parent == leaf->parent && prev->size > (K + 1) / 2) { // borrow from prev
                 int borrow_key = prev->key[prev->size - 1];
                 insert_data(leaf, 0, borrow_key, prev->data[prev->size - 1]);
+                prev->latch.lock();
                 remove_data(prev, prev->size - 1);
                 int new_key_for_prev = prev->key[prev->size - 1];
                 i = _search((Node*)parent, new_key_for_prev);
                 parent->key[i] = new_key_for_prev;
+                prev->latch.unlock();
+                leaf->latch.unlock();
+                trans.free_all_locks();
                 return;
             } else if (next->parent == leaf->parent && next->addr != ROOT_ADDR) { // if next exist, then merge next
                 
@@ -196,6 +243,8 @@ public:
                 next = leaf;
                 leaf = prev;
             } else {
+                leaf->latch.unlock();
+                trans.free_all_locks();
                 return;
             }
             int new_key; // merge
@@ -220,6 +269,7 @@ public:
                 Internal_Node* prev = (Internal_Node*)get_base(cursor->prev);
 
                 if (next->addr != 0 && next->parent == cursor->parent && next->size > (K + 1) / 2) { // borrow from next
+                    next->latch.lock();
                     int key_up = next->key[0];
                     i = _search((Node*)parent, key_up) - 1;
                     int key_down = parent->key[i];
@@ -230,8 +280,12 @@ public:
                     cursor->size++;
                     child->parent = cursor->addr;
                     remove_child(next, 0);
+                    next->latch.unlock();
+                    leaf->latch.unlock();
+                    trans.free_all_locks();
                     return;
                 } else if (prev->addr != 0 && prev->parent == cursor->parent && prev->size > (K + 1) / 2) { // borrow from prev  allow not exist key
+                    prev->latch.lock();
                     int key_up = prev->key[prev->size - 1];
                     i = _search((Node*)parent, key_up);
                     int key_down = parent->key[i];
@@ -240,6 +294,9 @@ public:
                     insert_child(cursor, 0, key_down, child->addr);
                     child->parent = cursor->addr;
                     remove_child(prev, prev->size);
+                    prev->latch.unlock();
+                    leaf->latch.unlock();
+                    trans.free_all_locks();
                     return;
                 } else if (next->parent == cursor->parent && next->addr != ROOT_ADDR) { // if next exist, then merge next
 
@@ -247,6 +304,8 @@ public:
                     next = cursor;
                     cursor = prev;
                 } else {
+                    leaf->latch.unlock();
+                    trans.free_all_locks();
                     return;
                 }
                 // merge
@@ -285,6 +344,8 @@ public:
                 }
             }
         }
+        trans.free_all_locks();
+        root->latch.unlock();
     }
 
     void display(Node* cursor, int depth) {
@@ -309,51 +370,80 @@ public:
 int main() {
     BPtree t;
     _data tmp = 0;
-    t.insert(9, tmp);
-    t.insert(23, tmp);
-    t.insert(24, tmp);
-    t.insert(25, tmp);
-    t.insert(26, tmp);
-    t.insert(27, tmp);
-    t.insert(28, tmp);
-    t.insert(29, tmp);
-    t.insert(30, tmp);
-    t.insert(33, tmp);
-    t.insert(34, tmp);
-    t.insert(35, tmp);
-    t.insert(45, tmp);
-    t.insert(85, tmp);
-    t.insert(94, tmp);
-    t.insert(899, tmp);
-    t.insert(1024, tmp);
-    t.insert(233, tmp);
-    t.insert(941, tmp);
-    t.insert(148, tmp);
-    t.insert(98, tmp);
-    t.insert(555, tmp);
-    t.insert(928, tmp);
-    t.insert(148, tmp);
-    t.insert(9842, tmp);
-    t.insert(281, tmp);
-    t.insert(199, tmp);
-    t.insert(47, tmp);
-    t.insert(99, tmp);
-    t.insert(67, tmp);
-    t.remove(24);
-    t.remove(98);
-    t.remove(99);
-    t.remove(85);
-    t.remove(47);
-    t.remove(45);
-    t.remove(94);
-    t.remove(9);
-    t.remove(23);
-    t.remove(30);
-    t.remove(35);
-    t.remove(34);
+    #pragma omp parallel for
+    for (size_t i = 0; i < 50; i++)
+    {
+        t.insert(i, tmp++);
+    }
+    std::cout << "Value of key is"<< t.search(25) << std::endl;
+    // t.display((Node*)(t.root), 0);
+    // t.insert(9, tmp);
+    // t.insert(23, tmp);
+    // t.insert(24, tmp);
+    // t.insert(25, tmp);
+    // t.insert(26, tmp);
+    // t.insert(27, tmp);
+    // t.insert(28, tmp);
+    // t.insert(29, tmp);
+    // t.insert(30, tmp);
+
+    // t.insert(33, tmp);
+    // t.insert(34, tmp);
+    // t.insert(35, tmp);
+    // t.insert(45, tmp);
+    // t.insert(85, tmp);
+    // t.insert(94, tmp);
+    // t.insert(899, tmp);
+    // t.insert(1024, tmp);
+    // t.insert(233, tmp);
+    // t.insert(941, tmp);
+    // t.insert(148, tmp);
+    // t.insert(98, tmp);
+    // t.insert(555, tmp);
+    // t.insert(928, tmp);
+    // t.insert(148, tmp);
+    // t.insert(9842, tmp);
+    // t.insert(281, tmp);
+    // t.insert(199, tmp);
+    // t.insert(47, tmp);
+    // t.insert(99, tmp);
+    // t.insert(67, tmp);
+    
+    // t.remove(9);
+    // t.remove(23);
+    // t.remove(24);
+    // t.remove(25);
+    // t.remove(26);
+    // t.remove(27);
+    // t.remove(28);
+    // t.remove(29);
+    // t.remove(30);    
+    // t.remove(33);
+    // t.remove(34);
+    // t.remove(35);
+    // t.remove(45);
+    // t.remove(85);
+    // t.remove(94);
+    // t.remove(24);
+    // t.remove(98);
+    // t.remove(99);
+    // t.remove(85);
+    // t.remove(47);
+    // t.remove(45);
+    // t.remove(94);
+    // t.remove(9);
+    // t.remove(23);
+    // t.remove(30);
+    // t.remove(35);
+    // t.remove(34);
     
     t.display((Node*)(t.root), 0);
-
+    // #pragma omp parallel for
+    // for (size_t i = 0; i < 50; i++)
+    // {
+    //     t.remove(i);
+    // }
+    // t.display((Node*)(t.root), 0);
     // int op;
     // int key;
     // while(1) {
