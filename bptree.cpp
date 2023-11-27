@@ -351,7 +351,6 @@ public:
         }
         std::cout << "Remove " << key << "successfully" << std::endl;
         trans.free_all_locks();
-        root->latch.unlock();
     }
 
     void display(Node* cursor, int depth) {
