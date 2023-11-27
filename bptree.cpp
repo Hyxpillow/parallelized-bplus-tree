@@ -62,18 +62,18 @@ public:
     _data search(int key) {
         int i;
         transaction_t trans;
-        Internal_Node* cursor = root;
+        Node* cursor = (Node*)root;
         while (cursor->type != LEAF) {
             for (i = 0; i < cursor->size && cursor->key[i] < key; i++);
-            Internal_Node* prev = trans.get_previous_lock();
-            if (prev)
+            Node* parent = trans.get_previous_lock();
+            if (parent)
             {
-                prev->latch.unlock_shared();
+                parent->latch.unlock_shared();
             }
             
             cursor->latch.lock_shared();
             trans.add_lock(cursor);
-            cursor = (Internal_Node*)get_base(cursor->children[i]);
+            cursor = get_base(((Internal_Node*)cursor)->children[i]);
         }
         Leaf_Node* leaf = (Leaf_Node*)cursor;
         i = _search((Node*)leaf, key);
@@ -86,14 +86,14 @@ public:
     
     void insert(int key, _data data) {
         int i;
-        Internal_Node* cursor = root;
+        Node* cursor = (Node*)root;
         transaction_t trans;
         root->latch.lock();
 
         // Search from root, to get the leaf node where we insert the data
         while (cursor->type != LEAF) {
             for (i = 0; i < cursor->size && cursor->key[i] < key; i++);
-            cursor = (Internal_Node*)get_base(cursor->children[i]);
+            cursor = get_base(((Internal_Node*)cursor)->children[i]);
             //Internal_Node* previous = trans.get_previous_lock();
             // Safe and exist node, unlock
             // if (previous && previous->size < K)
@@ -125,58 +125,58 @@ public:
                 insert_data(splited_leaf, j, leaf->key[K / 2 + 1], leaf->data[K / 2 + 1]);
                 remove_data(leaf, K / 2 + 1);
             }
-            Internal_Node* parent = (Internal_Node*)get_base(leaf->parent);
+            Node* parent = get_base(leaf->parent);
             splited_leaf->parent = parent->addr; // set the same parent
             i = _search((Node*)parent, mid_key);
 
-            parent->children[i] = splited_leaf->addr;
-            insert_child(parent, i, mid_key, leaf->addr);
-
+            ((Internal_Node*)parent)->children[i] = splited_leaf->addr;
+            insert_child((Internal_Node*)parent, i, mid_key, leaf->addr);
+            Internal_Node* index_cursor;
             while (parent->size == K + 1) { // split INDEX
-                cursor = parent;
-                if (cursor->addr == 0) { // if spliting root, then copy $(root_addr) to a new node
+                index_cursor = (Internal_Node*)parent;
+                if (index_cursor->addr == 0) { // if spliting root, then copy $(root_addr) to a new node
                     Internal_Node* root_copy = (Internal_Node*)new_base(INDEX);
-                    root_copy->parent = cursor->addr;
-                    root_copy->children[0] = cursor->children[K + 1];
+                    root_copy->parent = index_cursor->addr;
+                    root_copy->children[0] = index_cursor->children[K + 1];
                     for (int i = 0; i < K + 1; i++) {
-                        insert_child(root_copy, root_copy->size, cursor->key[0], cursor->children[0]);
-                        remove_child(cursor, 0);
+                        insert_child(root_copy, root_copy->size, index_cursor->key[0], index_cursor->children[0]);
+                        remove_child(index_cursor, 0);
                     }
                     for (int i = 0; i <= K + 1; i++) {
                         Node* child = get_base(root_copy->children[i]);
                         child->parent = root_copy->addr;
                     }
-                    cursor->children[0] = root_copy->addr;
-                    cursor = root_copy;
+                    index_cursor->children[0] = root_copy->addr;
+                    index_cursor = root_copy;
                 }
-                mid_key = cursor->key[K / 2];
+                mid_key = index_cursor->key[K / 2];
                 Internal_Node* splited_internal = (Internal_Node*)new_base(INDEX);
-                splited_internal->prev = cursor->addr;
-                splited_internal->next = cursor->next;
-                if (cursor->next != 0) {
-                    Internal_Node* next_internal = (Internal_Node*)get_base(cursor->next);
+                splited_internal->prev = index_cursor->addr;
+                splited_internal->next = index_cursor->next;
+                if (index_cursor->next != 0) {
+                    Internal_Node* next_internal = (Internal_Node*)get_base(index_cursor->next);
                     next_internal->prev = splited_internal->addr;
                 }
-                cursor->next = splited_internal->addr;
-                cursor->next = splited_internal->addr;
-                splited_internal->prev = cursor->addr;
+                index_cursor->next = splited_internal->addr;
+                index_cursor->next = splited_internal->addr;
+                splited_internal->prev = index_cursor->addr;
 
-                Node* last_child = get_base(cursor->children[K + 1]);
+                Node* last_child = get_base(index_cursor->children[K + 1]);
                 splited_internal->children[0] = last_child->addr;
                 last_child->parent = splited_internal->addr;
                 for (int j = 0; j < (K + 1) / 2; j++) { // fill new node
-                    Node* child = get_base(cursor->children[K / 2 + 1]);
-                    insert_child(splited_internal, j, cursor->key[K / 2 + 1], child->addr);
-                    remove_child(cursor, K / 2 + 1);
+                    Node* child = get_base(index_cursor->children[K / 2 + 1]);
+                    insert_child(splited_internal, j, index_cursor->key[K / 2 + 1], child->addr);
+                    remove_child(index_cursor, K / 2 + 1);
                     child->parent = splited_internal->addr;
                 }
-                parent = (Internal_Node*)get_base(cursor->parent);
+                parent = get_base(index_cursor->parent);
                 splited_internal->parent = parent->addr;
                 i = _search((Node*)parent, mid_key);
-                parent->children[i] = splited_internal->addr;
+                ((Internal_Node*)parent)->children[i] = splited_internal->addr;
 
-                insert_child(parent, i, mid_key, cursor->addr);
-                cursor->size--;
+                insert_child(((Internal_Node*)parent), i, mid_key, index_cursor->addr);
+                index_cursor->size--;
             }
             
         }
@@ -186,55 +186,55 @@ public:
     }
 
     void remove(int key) {
+        bool lock_next_next;
         int i;
-        Internal_Node* cursor = root;
+        Node* cursor = (Node*)root;
         transaction_t trans;
-        root->latch.lock();
         while (cursor->type != LEAF) {
             for (i = 0; i < cursor->size && cursor->key[i] < key; i++);
-            cursor = (Internal_Node*)get_base(cursor->children[i]);
             trans.add_lock(cursor);
             cursor->latch.lock();
+            cursor = get_base(((Internal_Node*)cursor)->children[i]);
         }
         // Get the leaf node
-        trans.free_last_lock();
         Leaf_Node* leaf = (Leaf_Node*)cursor;
         leaf->latch.lock();
+        trans.add_lock((Node*)leaf);
+
         i = _search((Node*)leaf, key);
         if (i == leaf->size || leaf->key[i] != key)
         {
-            leaf->latch.unlock();
             trans.free_all_locks();
             return; // key not found
         }
         remove_data(leaf, i); // leaf still exist, be careful for the lock
 
+        // Handle Leaf
         if (leaf->size < (K + 1) / 2) { // leaf unbalanced
             Internal_Node* parent = (Internal_Node*)get_base(leaf->parent); // already locked
             Leaf_Node* next = (Leaf_Node*)get_base(leaf->next);
+            next->latch.lock();
+            trans.add_lock((Node*)next);
             Leaf_Node* prev = (Leaf_Node*)get_base(leaf->prev);
+            prev->latch.lock();
+            trans.add_lock((Node*)prev);
+
             if (leaf->next != ROOT_ADDR && next->parent == leaf->parent && next->size > (K + 1) / 2) { // borrow from next
                 int borrow_key = next->key[0]; // new_key for cursor
                 insert_data(leaf, leaf->size, borrow_key, next->data[0]);
-                next->latch.lock();
                 remove_data(next, 0);
                 int new_key_for_leaf = borrow_key;
                 i = _search((Node*)parent, key);
                 parent->key[i] = borrow_key;
-                next->latch.unlock();
-                leaf->latch.unlock();
                 trans.free_all_locks();
                 return;
             } else if (leaf->prev != ROOT_ADDR && prev->parent == leaf->parent && prev->size > (K + 1) / 2) { // borrow from prev
                 int borrow_key = prev->key[prev->size - 1];
                 insert_data(leaf, 0, borrow_key, prev->data[prev->size - 1]);
-                prev->latch.lock();
                 remove_data(prev, prev->size - 1);
                 int new_key_for_prev = prev->key[prev->size - 1];
                 i = _search((Node*)parent, new_key_for_prev);
                 parent->key[i] = new_key_for_prev;
-                prev->latch.unlock();
-                leaf->latch.unlock();
                 trans.free_all_locks();
                 return;
             } else if (next->parent == leaf->parent && next->addr != ROOT_ADDR) { // if next exist, then merge next
@@ -243,7 +243,6 @@ public:
                 next = leaf;
                 leaf = prev;
             } else {
-                leaf->latch.unlock();
                 trans.free_all_locks();
                 return;
             }
@@ -262,49 +261,49 @@ public:
             parent->key[i - 1] = new_key;
             remove_child(parent, i);
             
+            Internal_Node* index_cursor;
+            // Handle Internal
             while (parent->size < (K + 1) / 2 && parent->addr != ROOT_ADDR) { // update INDEX
-                cursor = parent;
-                parent = (Internal_Node*)get_base(cursor->parent);
-                Internal_Node* next = (Internal_Node*)get_base(cursor->next);
-                Internal_Node* prev = (Internal_Node*)get_base(cursor->prev);
+                index_cursor = parent;
+                parent = (Internal_Node*)get_base(index_cursor->parent);
+                Internal_Node* next = (Internal_Node*)get_base(index_cursor->next);
+                Internal_Node* prev = (Internal_Node*)get_base(index_cursor->prev);
+                
+                next->latch.lock();
+                trans.add_lock((Node*)next);
+                prev->latch.lock();
+                trans.add_lock((Node*)prev);
 
-                if (next->addr != 0 && next->parent == cursor->parent && next->size > (K + 1) / 2) { // borrow from next
-                    next->latch.lock();
+                if (next->addr != 0 && next->parent == index_cursor->parent && next->size > (K + 1) / 2) { // borrow from next
                     int key_up = next->key[0];
                     i = _search((Node*)parent, key_up) - 1;
                     int key_down = parent->key[i];
                     parent->key[i] = key_up;
                     Node* child = get_base(next->children[0]);
-                    cursor->key[cursor->size] = key_down;
-                    cursor->children[cursor->size + 1] = child->addr;
-                    cursor->size++;
-                    child->parent = cursor->addr;
+                    index_cursor->key[index_cursor->size] = key_down;
+                    index_cursor->children[index_cursor->size + 1] = child->addr;
+                    index_cursor->size++;
+                    child->parent = index_cursor->addr;
                     remove_child(next, 0);
-                    next->latch.unlock();
-                    leaf->latch.unlock();
                     trans.free_all_locks();
                     return;
-                } else if (prev->addr != 0 && prev->parent == cursor->parent && prev->size > (K + 1) / 2) { // borrow from prev  allow not exist key
-                    prev->latch.lock();
+                } else if (prev->addr != 0 && prev->parent == index_cursor->parent && prev->size > (K + 1) / 2) { // borrow from prev  allow not exist key
                     int key_up = prev->key[prev->size - 1];
                     i = _search((Node*)parent, key_up);
                     int key_down = parent->key[i];
                     parent->key[i] = key_up;
                     Node* child = get_base(prev->children[prev->size]);
-                    insert_child(cursor, 0, key_down, child->addr);
-                    child->parent = cursor->addr;
+                    insert_child(index_cursor, 0, key_down, child->addr);
+                    child->parent = index_cursor->addr;
                     remove_child(prev, prev->size);
-                    prev->latch.unlock();
-                    leaf->latch.unlock();
                     trans.free_all_locks();
                     return;
-                } else if (next->parent == cursor->parent && next->addr != ROOT_ADDR) { // if next exist, then merge next
-
-                } else if (prev->parent == cursor->parent && prev->addr != ROOT_ADDR) { // if prev exist, then merge prev
-                    next = cursor;
-                    cursor = prev;
+                } else if (next->parent == index_cursor->parent && next->addr != ROOT_ADDR) { // if next exist, then merge next
+                    lock_next_next = true;
+                } else if (prev->parent == index_cursor->parent && prev->addr != ROOT_ADDR) { // if prev exist, then merge prev
+                    next = index_cursor;
+                    index_cursor = prev;
                 } else {
-                    leaf->latch.unlock();
                     trans.free_all_locks();
                     return;
                 }
@@ -312,21 +311,27 @@ public:
                 int sibling_first_key = next->key[0];
                 i = _search((Node*)parent, sibling_first_key) - 1;
                 int key_down = parent->key[i];
-                cursor->key[cursor->size] = key_down;
-                cursor->size++;
+                index_cursor->key[index_cursor->size] = key_down;
+                index_cursor->size++;
                 Node* last_child = get_base(next->children[next->size]);
-                cursor->children[cursor->size] = last_child->addr;
-                last_child->parent = cursor->addr;
+                index_cursor->children[index_cursor->size] = last_child->addr;
+                last_child->parent = index_cursor->addr;
 
                 while (next->size > 0) {
                     Node* child = get_base(next->children[0]);
-                    insert_child(cursor, cursor->size, next->key[0], child->addr);
+                    insert_child(index_cursor, index_cursor->size, next->key[0], child->addr);
                     remove_child(next, 0);
-                    child->parent = cursor->addr;
+                    child->parent = index_cursor->addr;
                 }
                 Node* next_of_next = get_base(next->next);
-                cursor->next = next_of_next->addr;
-                next_of_next->prev = cursor->addr;
+                if (lock_next_next)
+                {
+                    next_of_next->latch.lock();
+                    trans.add_lock(next_of_next);
+                }
+                
+                index_cursor->next = next_of_next->addr;
+                next_of_next->prev = index_cursor->addr;
                 next->valid = 0;
 
                 parent->key[i] = parent->key[i + 1];
@@ -334,16 +339,17 @@ public:
 
                 if (parent->addr == ROOT_ADDR && parent->size == 0) { 
                     // remove root
-                    *parent = *cursor;
+                    *parent = *index_cursor;
                     parent->addr = 0;
                     for (int i = 0; i <= K + 1; i++) {
                         Node* child = get_base(parent->children[i]);
                         child->parent = parent->addr;
                     }
-                    cursor->valid = 0;
+                    index_cursor->valid = 0;
                 }
             }
         }
+        std::cout << "Remove " << key << "successfully" << std::endl;
         trans.free_all_locks();
         root->latch.unlock();
     }
@@ -375,8 +381,12 @@ int main() {
     {
         t.insert(i, tmp++);
     }
-    std::cout << "Value of key is"<< t.search(25) << std::endl;
-    // t.display((Node*)(t.root), 0);
+    t.display((Node*)(t.root), 0);
+    #pragma omp parallel for
+    for (size_t i = 0; i < 25; i++)
+    {
+        t.remove(i);
+    }
     // t.insert(9, tmp);
     // t.insert(23, tmp);
     // t.insert(24, tmp);

@@ -67,9 +67,9 @@ typedef struct page_header {
 class transaction_t
 {
 private:
-    std::deque<Internal_Node*> lock_list;
+    std::deque<Node*> lock_list;
 public:
-    void add_lock(Internal_Node* node)
+    void add_lock(Node* node)
     {
         lock_list.push_back(node);
     }
@@ -86,13 +86,13 @@ public:
     {
         if (!lock_list.empty())
         {
-            Internal_Node* last_lock = lock_list.back();
+            Node* last_lock = lock_list.back();
             last_lock->latch.unlock();
             lock_list.pop_back();
         }
     }
 
-    Internal_Node* get_previous_lock()
+    Node* get_previous_lock()
     {
         return !lock_list.empty()?lock_list.back():nullptr;
     }
