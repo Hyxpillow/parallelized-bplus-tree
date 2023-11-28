@@ -78,10 +78,10 @@ public:
         while (cursor->type != LEAF) {
             for (i = 0; i < cursor->size && cursor->key[i] < key; i++);
             Node* parent = cursor;
-            parent->latch.lock();
+            parent->latch.lock_shared();
             trans.add_lock(parent);
             cursor = ((Internal_Node*)cursor)->children[i];
-            trans.free_all_locks();
+            trans.free_all_shared_locks();
             trans.add_lock(cursor);
         }
         Node* leaf = cursor;
@@ -185,6 +185,7 @@ public:
                 cursor->size--;
             }
             trans.free_all_locks();
+            //std::cout << "Insert: " << key << std::endl;
         }
     }
 
@@ -360,18 +361,40 @@ public:
     }
 
 };
+
+
 int main() {
     BPtree t;
     _data tmp = 0;
-    #pragma omp parallel for num_threads
-    for (int i = 0; i < 1000000; i++) {
+    double start_time, end_time;
+    const int num_random_numbers = 1000;
+    int random_numbers[num_random_numbers];
+    for (int i = 0; i < num_random_numbers; ++i) {
+        random_numbers[i] = rand() % 1001;
+    }
+
+    start_time = omp_get_wtime();
+    // #pragma omp parallel for
+    // for (int i = 0; i < num_random_numbers; ++i) {
+    //     if (random_numbers[i] % 3 == 0) {
+    //         t.insert(random_numbers[i],random_numbers[i]);
+    //     } else if (random_numbers[i] % 3 == 1) {
+    //         t.search(random_numbers[i]);
+    //     } else {
+    //         t.remove(random_numbers[i]);
+    //     }
+    // }
+    #pragma omp parallel for num_threads(8)
+    for (int i = 0; i < 100000; i++) {
         t.insert(i, tmp + i + 1);
     }
     
-    #pragma omp for
-    for (int i = 50000; i < 100000; i++) {
-        t.remove(i);
-    }
+    //#pragma omp for
+    // for (int i = 5000; i < 10000; i++) {
+    //     t.remove(i);
+    // }
+    end_time = omp_get_wtime();
+    std::cout << "Execute time: " << end_time-start_time << std::endl;
     t.display((t.root), 0);
     return 0;
 }

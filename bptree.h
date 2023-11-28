@@ -58,18 +58,37 @@ public:
     {
         while (!lock_list.empty())
         {
-            free_last_lock();
+            //free_last_lock();
+            free_first_lock();
         }
     }
 
-    void free_last_lock()
+    void free_all_shared_locks()
+    {
+        while (!lock_list.empty())
+        {
+            free_first_shared_lock();
+        }
+    }
+
+    void free_first_shared_lock()
     {
         if (!lock_list.empty())
         {
-            Node* last_lock = lock_list.back();
+            Node* last_lock = lock_list.front();
+            last_lock->latch.unlock_shared();
+            lock_list.pop_front();
+        }           
+    }
+
+    void free_first_lock()
+    {
+        if (!lock_list.empty())
+        {
+            Node* last_lock = lock_list.front();
             last_lock->latch.unlock();
-            lock_list.pop_back();
-        }
+            lock_list.pop_front();
+        }       
     }
 
     Node* get_previous_lock()
