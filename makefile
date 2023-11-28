@@ -1,5 +1,5 @@
 CC := g++
-CFLAGS := 
+CFLAGS := -std=c++17 -fopenmp -fsanitize=thread -g
 OBJ := bptree.o
 
 src_dir := .

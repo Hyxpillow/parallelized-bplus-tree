@@ -72,11 +72,17 @@ public:
     }
 
     _data search(int key) {
+        transaction_t trans;
         int i;
         Node* cursor = root;
         while (cursor->type != LEAF) {
             for (i = 0; i < cursor->size && cursor->key[i] < key; i++);
+            Node* parent = cursor;
+            parent->latch.lock();
+            trans.add_lock(parent);
             cursor = ((Internal_Node*)cursor)->children[i];
+            trans.free_all_locks();
+            trans.add_lock(cursor);
         }
         Node* leaf = cursor;
         i = _search(leaf, key);
@@ -86,16 +92,29 @@ public:
     }
     
     void insert(int key, _data data) {
+        transaction_t trans;
         int i;
         Node* cursor = root;
         while (cursor->type != LEAF) {
             for (i = 0; i < cursor->size && cursor->key[i] < key; i++);
+            Node* parent = cursor;
+            parent->latch.lock();
+            trans.add_lock(parent);
             cursor = ((Internal_Node*)cursor)->children[i];
+            //cursor->latch.lock();
+            if (cursor->size < K)
+            {
+                trans.free_all_locks();
+            }
+            trans.add_lock(cursor);
         }
         Node* leaf = cursor;
         i = _search(leaf, key);
         if (i != leaf->size && leaf->key[i] == key)
+        {
+            trans.free_all_locks();
             return; // key found
+        }
         insert_data((Leaf_Node*)leaf, i, key, data);
 
         if (leaf->size == K + 1) { // split LEAF
@@ -165,20 +184,33 @@ public:
                 insert_child(((Internal_Node*)parent), i, mid_key, cursor);
                 cursor->size--;
             }
+            trans.free_all_locks();
         }
     }
 
     void remove(int key) {
+        transaction_t trans;
         int i;
         Node* cursor = root;
         while (cursor->type != LEAF) {
             for (i = 0; i < cursor->size && cursor->key[i] < key; i++);
+            Node* parent = cursor;
+            parent->latch.lock();
+            trans.add_lock(parent);
             cursor = ((Internal_Node*)cursor)->children[i];
+            if (cursor->size > (K+1)/2)
+            {
+                trans.free_all_locks();
+            }
+            trans.add_lock(cursor);
         }
         Node* leaf = cursor;
         i = _search(leaf, key);
         if (i == leaf->size || leaf->key[i] != key)
+        {
+            trans.free_all_locks();
             return; // key not found
+        }
         remove_data((Leaf_Node*)leaf, i);
 
         if (leaf->size < (K + 1) / 2) { // leaf unbalanced
@@ -192,6 +224,7 @@ public:
                 int new_key_for_leaf = borrow_key;
                 i = _search(parent, key);
                 parent->key[i] = borrow_key;
+                trans.free_all_locks();
                 return;
             } else if (leaf->prev != NULL && prev->parent == leaf->parent && prev->size > (K + 1) / 2) { // borrow from prev
                 int borrow_key = prev->key[prev->size - 1];
@@ -200,6 +233,7 @@ public:
                 int new_key_for_prev = prev->key[prev->size - 1];
                 i = _search(parent, new_key_for_prev);
                 parent->key[i] = new_key_for_prev;
+                trans.free_all_locks();
                 return;
             } else if (next->parent == leaf->parent && next != NULL) { // if next exist, then merge next
                 
@@ -207,6 +241,7 @@ public:
                 next = leaf;
                 leaf = prev;
             } else {
+                trans.free_all_locks();
                 return;
             }
             int new_key; // merge
@@ -229,6 +264,10 @@ public:
                 parent = cursor->parent;
                 Node* next = cursor->next;
                 Node* prev = cursor->prev;
+                // next->latch.lock();
+                // prev->latch.lock();
+                // trans.add_lock(next);
+                // trans.add_lock(prev);
 
                 if (next != 0 && next->parent == cursor->parent && next->size > (K + 1) / 2) { // borrow from next
                     int key_up = next->key[0];
@@ -241,6 +280,7 @@ public:
                     cursor->size++;
                     child->parent = cursor;
                     remove_child((Internal_Node*)next, 0);
+                    trans.free_all_locks();
                     return;
                 } else if (prev != 0 && prev->parent == cursor->parent && prev->size > (K + 1) / 2) { // borrow from prev  allow not exist key
                     int key_up = prev->key[prev->size - 1];
@@ -251,6 +291,7 @@ public:
                     insert_child(((Internal_Node*)cursor), 0, key_down, child);
                     child->parent = cursor;
                     remove_child(((Internal_Node*)prev), prev->size);
+                    trans.free_all_locks();
                     return;
                 } else if (next->parent == cursor->parent && next != NULL) { // if next exist, then merge next
 
@@ -258,6 +299,7 @@ public:
                     next = cursor;
                     cursor = prev;
                 } else {
+                    trans.free_all_locks();
                     return;
                 }
                 // merge
@@ -296,6 +338,7 @@ public:
                 }
             }
         }
+        trans.free_all_locks();
     }
 
     void display(Node* cursor, int depth) {
@@ -320,11 +363,13 @@ public:
 int main() {
     BPtree t;
     _data tmp = 0;
-    for (int i = 0; i < 100000; i++) {
+    #pragma omp parallel for num_threads
+    for (int i = 0; i < 1000000; i++) {
         t.insert(i, tmp + i + 1);
     }
     
-    for (int i = 5000; i < 10000; i++) {
+    #pragma omp for
+    for (int i = 50000; i < 100000; i++) {
         t.remove(i);
     }
     t.display((t.root), 0);
