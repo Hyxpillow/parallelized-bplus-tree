@@ -1,6 +1,6 @@
 CC := g++
 CFLAGS := 
-OBJ := page.o bptree.o
+OBJ := bptree.o
 
 src_dir := .
 include_dir := .
