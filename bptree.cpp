@@ -88,26 +88,28 @@ public:
         int i;
         Node* cursor = (Node*)root;
         transaction_t trans;
-        root->latch.lock();
-
         // Search from root, to get the leaf node where we insert the data
         while (cursor->type != LEAF) {
             for (i = 0; i < cursor->size && cursor->key[i] < key; i++);
+            Node* parent = cursor;
+            parent->latch.lock();
+            trans.add_lock(parent);
             cursor = get_base(((Internal_Node*)cursor)->children[i]);
-            //Internal_Node* previous = trans.get_previous_lock();
-            // Safe and exist node, unlock
-            // if (previous && previous->size < K)
-            // {
-            //     previous->latch.unlock();
-            // }
-            // Add current  cursor into lock_list
-            trans.add_lock(cursor);
+            // If this is a safe node, free all previous locks
+            if (cursor->size < K)
+            {
+                trans.free_all_locks();
+            }
             cursor->latch.lock();
+            trans.add_lock(cursor);
         }
         Leaf_Node* leaf = (Leaf_Node*)cursor;
         i = _search((Node*)leaf, key);
         if (i != leaf->size && leaf->key[i] == key)
-            return; // key found
+        {
+            trans.free_all_locks();
+            return;
+        }
         insert_data(leaf, i, key, data);
 
         if (leaf->size == K + 1) { // split LEAF
@@ -181,8 +183,7 @@ public:
             
         }
         trans.free_all_locks();
-        root->latch.unlock();
-        std::cout << "Insert " << key << "successfully" << std::endl;
+        //std::cout << "Insert " << key << "successfully" << std::endl;
     }
 
     void remove(int key) {
@@ -192,6 +193,13 @@ public:
         transaction_t trans;
         while (cursor->type != LEAF) {
             for (i = 0; i < cursor->size && cursor->key[i] < key; i++);
+            Node* parent = cursor;
+            parent->latch.lock();
+            trans.add_lock(parent);
+            if (cursor->size >(K + 1) / 2)
+            {
+                trans.free_all_locks();
+            }
             trans.add_lock(cursor);
             cursor->latch.lock();
             cursor = get_base(((Internal_Node*)cursor)->children[i]);
@@ -376,16 +384,16 @@ int main() {
     BPtree t;
     _data tmp = 0;
     #pragma omp parallel for
-    for (size_t i = 0; i < 50; i++)
+    for (size_t i = 0; i < 4096; i++)
     {
         t.insert(i, tmp++);
     }
-    t.display((Node*)(t.root), 0);
-    #pragma omp parallel for
-    for (size_t i = 0; i < 25; i++)
-    {
-        t.remove(i);
-    }
+    //t.display((Node*)(t.root), 0);
+    // #pragma omp parallel for
+    // for (size_t i = 0; i < 102400; i++)
+    // {
+    //     t.search(i);
+    // }
     // t.insert(9, tmp);
     // t.insert(23, tmp);
     // t.insert(24, tmp);
@@ -446,7 +454,7 @@ int main() {
     // t.remove(35);
     // t.remove(34);
     
-    t.display((Node*)(t.root), 0);
+    //t.display((Node*)(t.root), 0);
     // #pragma omp parallel for
     // for (size_t i = 0; i < 50; i++)
     // {
