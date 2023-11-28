@@ -1,6 +1,6 @@
 #include <iostream>
 #include "page.h"
-
+transaction_t trans;
 int _search(Node* node, int key) {
     int i;
     for (i = 0; i < node->size && node->key[i] < key; i++);
@@ -87,22 +87,24 @@ public:
     void insert(int key, _data data) {
         int i;
         Node* cursor = (Node*)root;
-        transaction_t trans;
+        
         // Search from root, to get the leaf node where we insert the data
+
         while (cursor->type != LEAF) {
             for (i = 0; i < cursor->size && cursor->key[i] < key; i++);
             Node* parent = cursor;
             parent->latch.lock();
             trans.add_lock(parent);
             cursor = get_base(((Internal_Node*)cursor)->children[i]);
+            cursor->latch.lock();
             // If this is a safe node, free all previous locks
             if (cursor->size < K)
             {
                 trans.free_all_locks();
             }
-            cursor->latch.lock();
             trans.add_lock(cursor);
         }
+
         Leaf_Node* leaf = (Leaf_Node*)cursor;
         i = _search((Node*)leaf, key);
         if (i != leaf->size && leaf->key[i] == key)
@@ -137,6 +139,7 @@ public:
             while (parent->size == K + 1) { // split INDEX
                 index_cursor = (Internal_Node*)parent;
                 if (index_cursor->addr == 0) { // if spliting root, then copy $(root_addr) to a new node
+                    //std::cout << "Enter root copy" << std::endl;
                     Internal_Node* root_copy = (Internal_Node*)new_base(INDEX);
                     root_copy->parent = index_cursor->addr;
                     root_copy->children[0] = index_cursor->children[K + 1];
@@ -183,7 +186,7 @@ public:
             
         }
         trans.free_all_locks();
-        //std::cout << "Insert " << key << "successfully" << std::endl;
+        std::cout << "Insert " << key << "successfully" << std::endl;
     }
 
     void remove(int key) {
