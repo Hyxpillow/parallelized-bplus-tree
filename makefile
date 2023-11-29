@@ -1,15 +1,14 @@
 CC := g++
-CFLAGS := -std=c++17 -fopenmp -fsanitize=thread -g
-OBJ := bptree.o
+CFLAGS := -std=c++17 -fopenmp -g
+source_files := bptree.cpp
+include_files := parallel_rwlatch.hpp bptree.h
+zip_name := bptree.zip
 
-src_dir := .
-include_dir := .
+tree: $(source_files) $(include_files)
+	$(CC) $(CFLAGS) bptree.cpp -o $@
 
-tree: $(OBJ)
-	$(CC) $(CFLAGS) $^ -o $@
-
-%.o: $(src_dir)/%.c
-	$(CC) -c $(CFLAGS) $^ -o $@ -I $(include_dir)
+zip: $(source_files) $(include_files) makefile
+	zip -r $(zip_name) $(source_files) $(include_files) makefile
 
 clean: 
-	rm -f tree *.o
+	rm -f tree $(zip_name)
