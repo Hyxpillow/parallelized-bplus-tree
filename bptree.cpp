@@ -16,6 +16,7 @@ Node* new_node(Node_Type node_type) {
     node->prev = NULL;
     return node;
 }
+
 int _search(Node* node, int key) {
     int i;
     for (i = 0; i < node->size && node->key[i] < key; i++);
@@ -31,6 +32,7 @@ void insert_child(Internal_Node* internal, int i, int key, Node* child) {
     internal->children[i] = child;
     internal->size++;
 }
+
 void remove_child(Internal_Node* internal, int i) {
     for (int j = i; j < internal->size - 1; j++) {
         internal->key[j] = internal->key[j + 1];
@@ -40,6 +42,7 @@ void remove_child(Internal_Node* internal, int i) {
         internal->children[internal->size - 1] = internal->children[internal->size];
     internal->size--;
 }
+
 void insert_data(Leaf_Node* leaf, int i, int key, _data data) {
     for (int j = leaf->size; j > i; j--) {
         leaf->key[j] = leaf->key[j - 1];
@@ -49,6 +52,7 @@ void insert_data(Leaf_Node* leaf, int i, int key, _data data) {
     leaf->data[i] = data;
     leaf->size++;
 }
+
 void remove_data(Leaf_Node* leaf, int i) {
     for (int j = i; j < leaf->size - 1; j++) {
         leaf->key[j] = leaf->key[j + 1];
@@ -97,6 +101,7 @@ public:
             parent->latch.lock();
             trans.add_lock(parent);
             cursor = ((Internal_Node*)cursor)->children[i];
+            //cursor->latch.lock();
             if (cursor->size < K)
             {
                 trans.free_all_locks();
@@ -185,6 +190,7 @@ public:
     }
 
     void remove(int key) {
+        //std::cout << "Remove " << key << std::endl;
         transaction_t trans;
         int i;
         Node* cursor = root;
@@ -255,12 +261,15 @@ public:
             i = _search(parent, new_key);
             parent->key[i - 1] = new_key;
             remove_child((Internal_Node*)parent, i);
-            
             while (parent->size < (K + 1) / 2 && parent != NULL) { // update INDEX
                 cursor = parent;
                 parent = cursor->parent;
                 Node* next = cursor->next;
                 Node* prev = cursor->prev;
+                // next->latch.lock();
+                // prev->latch.lock();
+                // trans.add_lock(next);
+                // trans.add_lock(prev);
 
                 if (next != 0 && next->parent == cursor->parent && next->size > (K + 1) / 2) { // borrow from next
                     int key_up = next->key[0];
@@ -285,6 +294,7 @@ public:
                     child->parent = cursor;
                     remove_child(((Internal_Node*)prev), prev->size);
                     trans.free_all_locks();
+                    //std::cout << "Remove " << key << " I am good at 1" <<std::endl;
                     return;
                 } else if (next != NULL && next->parent == cursor->parent) { // if next exist, then merge next
 
@@ -296,6 +306,7 @@ public:
                     return;
                 }
                 // merge
+                //std::cout << "Remove " << key << " I am good at 2" <<std::endl;
                 int sibling_first_key = next->key[0];
                 i = _search(parent, sibling_first_key) - 1;
                 int key_down = parent->key[i];
@@ -330,6 +341,7 @@ public:
                     }
                     free(cursor);
                 }
+                //std::cout << "Remove " << key << " I am good at 3" <<std::endl;
             }
         }
         trans.free_all_locks();
@@ -352,6 +364,7 @@ public:
                 display(((Internal_Node*)cursor)->children[i], depth + 1);
         }
     }
+
 };
 
 int main(int argc, char** argv) {
