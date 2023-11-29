@@ -16,7 +16,6 @@ Node* new_node(Node_Type node_type) {
     node->prev = NULL;
     return node;
 }
-
 int _search(Node* node, int key) {
     int i;
     for (i = 0; i < node->size && node->key[i] < key; i++);
@@ -32,7 +31,6 @@ void insert_child(Internal_Node* internal, int i, int key, Node* child) {
     internal->children[i] = child;
     internal->size++;
 }
-
 void remove_child(Internal_Node* internal, int i) {
     for (int j = i; j < internal->size - 1; j++) {
         internal->key[j] = internal->key[j + 1];
@@ -42,7 +40,6 @@ void remove_child(Internal_Node* internal, int i) {
         internal->children[internal->size - 1] = internal->children[internal->size];
     internal->size--;
 }
-
 void insert_data(Leaf_Node* leaf, int i, int key, _data data) {
     for (int j = leaf->size; j > i; j--) {
         leaf->key[j] = leaf->key[j - 1];
@@ -52,7 +49,6 @@ void insert_data(Leaf_Node* leaf, int i, int key, _data data) {
     leaf->data[i] = data;
     leaf->size++;
 }
-
 void remove_data(Leaf_Node* leaf, int i) {
     for (int j = i; j < leaf->size - 1; j++) {
         leaf->key[j] = leaf->key[j + 1];
@@ -101,7 +97,6 @@ public:
             parent->latch.lock();
             trans.add_lock(parent);
             cursor = ((Internal_Node*)cursor)->children[i];
-            //cursor->latch.lock();
             if (cursor->size < K)
             {
                 trans.free_all_locks();
@@ -236,9 +231,9 @@ public:
                 parent->key[i] = new_key_for_prev;
                 trans.free_all_locks();
                 return;
-            } else if (next->parent == leaf->parent && next != NULL) { // if next exist, then merge next
+            } else if (next != NULL && next->parent == leaf->parent) { // if next exist, then merge next
                 
-            } else if (prev->parent == leaf->parent && prev != NULL) { // if prev exist, then merge prev
+            } else if (prev != NULL && prev->parent == leaf->parent) { // if prev exist, then merge prev
                 next = leaf;
                 leaf = prev;
             } else {
@@ -253,7 +248,8 @@ public:
             }
             Node* next_of_next = next->next;
             leaf->next = next_of_next;
-            next_of_next->prev = leaf;
+            if (next_of_next != NULL)
+                next_of_next->prev = leaf;
             free(next);
             
             i = _search(parent, new_key);
@@ -265,10 +261,6 @@ public:
                 parent = cursor->parent;
                 Node* next = cursor->next;
                 Node* prev = cursor->prev;
-                // next->latch.lock();
-                // prev->latch.lock();
-                // trans.add_lock(next);
-                // trans.add_lock(prev);
 
                 if (next != 0 && next->parent == cursor->parent && next->size > (K + 1) / 2) { // borrow from next
                     int key_up = next->key[0];
@@ -294,9 +286,9 @@ public:
                     remove_child(((Internal_Node*)prev), prev->size);
                     trans.free_all_locks();
                     return;
-                } else if (next->parent == cursor->parent && next != NULL) { // if next exist, then merge next
+                } else if (next != NULL && next->parent == cursor->parent) { // if next exist, then merge next
 
-                } else if (prev->parent == cursor->parent && prev != NULL) { // if prev exist, then merge prev
+                } else if (prev != NULL && prev->parent == cursor->parent) { // if prev exist, then merge prev
                     next = cursor;
                     cursor = prev;
                 } else {
@@ -321,7 +313,8 @@ public:
                 }
                 Node* next_of_next = next->next;
                 cursor->next = next_of_next;
-                next_of_next->prev = cursor;
+                if (next_of_next != NULL)
+                    next_of_next->prev = cursor;
                 free(next);
 
                 parent->key[i] = parent->key[i + 1];
@@ -359,42 +352,37 @@ public:
                 display(((Internal_Node*)cursor)->children[i], depth + 1);
         }
     }
-
 };
 
-
-int main() {
-    BPtree t;
-    _data tmp = 0;
-    double start_time, end_time;
-    const int num_random_numbers = 1000;
-    int random_numbers[num_random_numbers];
-    for (int i = 0; i < num_random_numbers; ++i) {
-        random_numbers[i] = rand() % 1001;
+int main(int argc, char** argv) {
+    if (argc != 5) {
+        std::cout << "Usage: " << argv[0] << " n_insert n_delete n_search n_threads" << std::endl;
+        return 0;
     }
+    int n_insert = atoi(argv[1]);
+    int n_delete = atoi(argv[2]);
+    int n_search = atoi(argv[3]);
+    int n_threads = atoi(argv[4]);
+
+    BPtree t;
+    double start_time, end_time;
+    srand(time(NULL)); 
 
     start_time = omp_get_wtime();
-    // #pragma omp parallel for
-    // for (int i = 0; i < num_random_numbers; ++i) {
-    //     if (random_numbers[i] % 3 == 0) {
-    //         t.insert(random_numbers[i],random_numbers[i]);
-    //     } else if (random_numbers[i] % 3 == 1) {
-    //         t.search(random_numbers[i]);
-    //     } else {
-    //         t.remove(random_numbers[i]);
-    //     }
-    // }
-    #pragma omp parallel for num_threads(8)
-    for (int i = 0; i < 100000; i++) {
-        t.insert(i, tmp + i + 1);
+    #pragma omp parallel for num_threads(n_threads)
+    for (int i = 0; i < n_insert; i++) {
+        t.insert(rand() % n_insert, 0);
     }
-    
-    //#pragma omp for
-    // for (int i = 5000; i < 10000; i++) {
-    //     t.remove(i);
-    // }
+    #pragma omp parallel for num_threads(n_threads)
+    for (int i = 0; i < n_delete; i++) {
+        t.remove(rand() % n_delete);
+    }
+    #pragma omp parallel for num_threads(n_threads)
+    for (int i = 0; i < n_search; i++) {
+        t.search(rand() % n_search);
+    }
     end_time = omp_get_wtime();
-    std::cout << "Execute time: " << end_time-start_time << std::endl;
     t.display((t.root), 0);
+    std::cout << "Execute time: " << end_time-start_time << std::endl;
     return 0;
 }

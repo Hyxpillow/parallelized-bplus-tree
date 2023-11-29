@@ -44,7 +44,7 @@ typedef struct leaf_node {
     _data data[K + 1];
 } Leaf_Node;
 
-class transaction_t
+class transaction_t // contain a lock_list
 {
 private:
     std::deque<Node*> lock_list;
