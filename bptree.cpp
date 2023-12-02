@@ -184,13 +184,11 @@ public:
                 insert_child(((Internal_Node*)parent), i, mid_key, cursor);
                 cursor->size--;
             }
-            trans.free_all_locks();
-            //std::cout << "Insert: " << key << std::endl;
         }
+        trans.free_all_locks();
     }
 
     void remove(int key) {
-        //std::cout << "Remove " << key << std::endl;
         transaction_t trans;
         int i;
         Node* cursor = root;
@@ -256,7 +254,6 @@ public:
             leaf->next = next_of_next;
             if (next_of_next != NULL)
                 next_of_next->prev = leaf;
-            free(next);
             
             i = _search(parent, new_key);
             parent->key[i - 1] = new_key;
@@ -326,20 +323,14 @@ public:
                 cursor->next = next_of_next;
                 if (next_of_next != NULL)
                     next_of_next->prev = cursor;
-                free(next);
 
                 parent->key[i] = parent->key[i + 1];
                 remove_child((Internal_Node*)parent, i + 1);
 
-                if (parent == NULL && parent->size == 0) { 
-                    // remove root
-                    *parent = *cursor;
-                    parent = 0;
-                    for (int i = 0; i <= K + 1; i++) {
-                        Node* child = ((Internal_Node*)parent)->children[i];
-                        child->parent = parent;
-                    }
-                    free(cursor);
+                if (parent == root && parent->size == 0) { 
+                    // free(root);
+                    root = cursor;
+                    root->parent = NULL;
                 }
                 //std::cout << "Remove " << key << " I am good at 3" <<std::endl;
             }
